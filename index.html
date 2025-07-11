@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mosaic Tile Flipper</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-bottom: 20px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+      max-width: 800px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+    }
+
+    input[type="file"],
+    input[type="number"],
+    button {
+      background: #000;
+      color: #eee;
+      border: 1px solid #444;
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+
+    input[type="number"] {
+      width: 60px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    canvas {
+      background: #000;
+      border: 1px solid #444;
+      image-rendering: pixelated;
+      cursor: pointer;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Mosaic Tile Flipper</h1>
+
+  <div class="controls">
+    <label>Image A<input type="file" id="img1" accept="image/*"></label>
+    <label>Image B<input type="file" id="img2" accept="image/*"></label>
+    <label>X<input type="number" id="tileX" min="1" value="16"></label>
+    <label>Y<input type="number" id="tileY" min="1" value="16"></label>
+    <label>Squares<input type="number" id="squareCount" min="1" value="50"></label>
+
+    <button onclick="generateEffect()">Generate</button>
+    <button onclick="swapImages()">Swap</button>
+    <button onclick="clearMap()">Clear</button>
+    <button onclick="downloadCanvas()">Download</button>
+    <button onclick="saveMap()">Save</button>
+    <label>Load<input type="file" id="mapLoader" accept='.json' onchange="loadMap(event)"></label>
+  </div>
+
+  <canvas id="mosaic" width="512" height="512"></canvas>
+
+  <script>
+    const canvas = document.getElementById("mosaic");
+    const ctx = canvas.getContext("2d");
+    let tileX = 16;
+    let tileY = 16;
+    let imgA = null, imgB = null;
+    let imgACanvas, imgBCanvas;
+    let map = [];
+
+    function loadImage(file, callback) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const img = new Image();
+        img.onload = () => callback(img);
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function drawImageToCanvas(img) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return tempCanvas;
+    }
+
+    function generateEffect() {
+      const file1 = document.getElementById("img1").files[0];
+      const file2 = document.getElementById("img2").files[0];
+      tileX = parseInt(document.getElementById("tileX").value);
+      tileY = parseInt(document.getElementById("tileY").value);
+      const squaresToFlip = parseInt(document.getElementById("squareCount").value);
+
+      if (!file1 || !file2) return alert("upload both images");
+
+      loadImage(file1, (loaded1) => {
+        imgA = loaded1;
+        imgACanvas = drawImageToCanvas(imgA);
+
+        loadImage(file2, (loaded2) => {
+          imgB = loaded2;
+          imgBCanvas = drawImageToCanvas(imgB);
+
+          // start all as true (image A)
+          map = Array.from({ length: tileY }, () =>
+            Array.from({ length: tileX }, () => true)
+          );
+
+          // flip N (?) random tiles to image B
+          const totalTiles = tileX * tileY;
+          const flipCount = Math.min(squaresToFlip, totalTiles);
+          const flat = [];
+
+          for (let y = 0; y < tileY; y++) {
+            for (let x = 0; x < tileX; x++) {
+              flat.push({ x, y });
+            }
+          }
+
+          const shuffled = flat.sort(() => 0.5 - Math.random()).slice(0, flipCount);
+          for (const { x, y } of shuffled) {
+            map[y][x] = false;
+          }
+
+          drawTiles();
+        });
+      });
+    }
+
+    function drawTiles() {
+      const tileWidth = canvas.width / tileX;
+      const tileHeight = canvas.height / tileY;
+      for (let y = 0; y < tileY; y++) {
+        for (let x = 0; x < tileX; x++) {
+          const src = map[y][x] ? imgACanvas : imgBCanvas;
+          ctx.drawImage(
+            src,
+            x * tileWidth, y * tileHeight, tileWidth, tileHeight,
+            x * tileWidth, y * tileHeight, tileWidth, tileHeight
+          );
+        }
+      }
+    }
+
+    function swapImages() {
+      [imgACanvas, imgBCanvas] = [imgBCanvas, imgACanvas];
+      drawTiles();
+    }
+
+    function clearMap() {
+      map = Array.from({ length: tileY }, () =>
+        Array.from({ length: tileX }, () => true)
+      );
+      drawTiles();
+    }
+
+    function downloadCanvas() {
+      const link = document.createElement('a');
+      link.download = 'mosaic.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function saveMap() {
+      const blob = new Blob([JSON.stringify(map)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tilemap.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function loadMap(event) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const loadedMap = JSON.parse(e.target.result);
+        tileY = loadedMap.length;
+        tileX = loadedMap[0].length;
+        document.getElementById("tileX").value = tileX;
+        document.getElementById("tileY").value = tileY;
+        map = loadedMap;
+        drawTiles();
+      };
+      reader.readAsText(file);
+    }
+
+    canvas.addEventListener("click", (e) => {
+      if (!map.length) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const tileWidth = canvas.width / tileX;
+      const tileHeight = canvas.height / tileY;
+      const tx = Math.floor(x / tileWidth);
+      const ty = Math.floor(y / tileHeight);
+      if (tx >= 0 && ty >= 0 && tx < tileX && ty < tileY) {
+        map[ty][tx] = !map[ty][tx];
+        drawTiles();
+      }
+    });
+  </script>
+  
+</body>
+</html>
